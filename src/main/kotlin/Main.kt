@@ -65,16 +65,15 @@ class ClientHandler(private val clientSocket: Socket) : Runnable {
     }
 
     private fun handlePostRequest(path: String, body: String): String {
-        val id = body.substringAfter("\"id\": ").substringBefore(",").trim()
+        // val id = body.substringAfter("\"id\": ").substringBefore(",").trim()
+        val id = path.substringAfterLast("/")
         val todoList = mutableList.find { it.id == id }
 
         return if (todoList != null) {
-            // Update the existing todoList
             val updatedList = parseTodoListJson(body)
             todoList.list = updatedList.list
             "HTTP/1.1 200 OK\r\n\r\n"
         } else if (path == "/api/list/new") {
-            // Create a new todoList
             val newTodoList = parseTodoListJson(body)
             mutableList.add(newTodoList)
             val responseJson = """
@@ -106,8 +105,6 @@ class ClientHandler(private val clientSocket: Socket) : Runnable {
     }
 
     private fun parseTodoListJson(json: String): TodoList {
-        // Implement your JSON parsing logic here
-        // This is just a placeholder implementation
         val id = json.substringAfter("\"id\": ").substringBefore(",").trim()
         val title = json.substringAfter("\"title\": ").substringBefore(",").trim()
         val list = json.substringAfter("\"list\": ").trim()
