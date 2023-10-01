@@ -1,12 +1,5 @@
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.io.OutputStream
-import java.net.ServerSocket
-import java.net.Socket
-
-data class TodoList(val id: Int, var title: String)
-
-var todoLists = mutableListOf<TodoList>()
+import java.io.*
+import java.net.*
 
 fun main() {
     val serverSocket = ServerSocket(8000)
@@ -14,79 +7,118 @@ fun main() {
 
     while (true) {
         val clientSocket = serverSocket.accept()
-        println("Connected by ${clientSocket.inetAddress.hostAddress}:${clientSocket.port}")
+        val clientThread = Thread(ClientHandler(clientSocket))
+        clientThread.start()
+    }
+}
 
-        val input = BufferedReader(InputStreamReader(clientSocket.getInputStream()))
-        val output = clientSocket.getOutputStream()
-
-        val request = input.readLine()
-        println("Received request: $request")
-
-        val response = handleRequest(request)
-        output.write(response.toByteArray())
-        output.flush()
-
+class ClientHandler(private val clientSocket: Socket) : Runnable {
+    override fun run() {
+        val request = readRequest()
+        val response = processRequest(request)
+        sendResponse(response)
         clientSocket.close()
     }
-}
 
-fun handleRequest(request: String): String {
-    val parts = request.split(" ")
-    val method = parts[0]
-    val path = parts[1]
-    val body = parts[parts.size - 1]
+    private fun readRequest(): String {
+        val inputStream = clientSocket.getInputStream()
+        val reader = BufferedReader(InputStreamReader(inputStream))
+        val request = StringBuilder()
+        var line: String?
 
-    return when (method) {
-        "GET" -> handleGetRequest(path)
-        "POST" -> handlePostRequest(path, body)
-        "DELETE" -> handleDeleteRequest(path)
-        else -> "HTTP/1.1 400 Bad Request\r\n\r\n"
-    }
-}
-
-fun handleGetRequest(path: String): String {
-    val id = path.substringAfterLast("/api/list/")
-    val todoList = todoLists.find { it.id == id.toInt() }
-    val response = if (todoList != null) {
-        "{\"id\":${todoList.id}, \"title\":\"${todoList.title}\"}"
-    } else {
-        ""
-    }
-    return "HTTP/1.1 200 OK\r\nContent-Length: ${response.length}\r\n\r\n$response"
-}
-
-fun handlePostRequest(path: String, body: String): String {
-    return when {
-        path.startsWith("/api/list/new") -> {
-            val title = body.substringAfterLast("title\":\"").substringBefore("\"")
-            val id = (1..100).random()
-            val todoList = TodoList(id, title)
-            todoLists.add(todoList)
-            val response = "{\"id\":$id}"
-            "HTTP/1.1 200 OK\r\nContent-Length: ${response.length}\r\n\r\n$response"
-        }
-        path.startsWith("/api/list/") -> {
-            val id = path.substringAfterLast("/api/list/").toInt()
-            val title = body.substringAfterLast("title\":\"").substringBefore("\"")
-            val todoList = todoLists.find { it.id == id }
-            if (todoList != null) {
-                todoList.title = title
-                "HTTP/1.1 200 OK\r\n\r\n"
-            } else {
-                "HTTP/1.1 404 Not Found\r\n\r\n"
+        while (reader.readLine().also { line = it } != null) {
+            if (line!!.isEmpty()) {
+                break
             }
+            request.append(line).append("\r\n")
         }
-        else -> "HTTP/1.1 400 Bad Request\r\n\r\n"
+
+        return request.toString()
+    }
+
+    private fun processRequest(request: String): String {
+        val lines = request.trim().split("\r\n")
+        val method = lines[0].split(" ")[0]
+        val path = lines[0].split(" ")[1]
+        val body = lines.last()
+
+        return when (method) {
+            "GET" -> handleGetRequest(path)
+            "POST" -> handlePostRequest(path, body)
+            "DELETE" -> handleDeleteRequest(path)
+            else -> "HTTP/1.1 400 Bad Request\r\n\r\n"
+        }
+    }
+
+    private fun handleGetRequest(path: String): String {
+        val id = path.substringAfterLast("/")
+        val todoList = mutableList.find { it.id == id }
+
+        return if (todoList != null) {
+            val responseJson = """
+                {"id": "${todoList.id}", "title": "${todoList.title}", "list": ${todoList.list}}
+            """.trimIndent()
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n$responseJson"
+        } else {
+            "HTTP/1.1 404 Not Found\r\n\r\n"
+        }
+    }
+
+    private fun handlePostRequest(path: String, body: String): String {
+        val id = body.substringAfter("\"id\": ").substringBefore(",").trim()
+        val todoList = mutableList.find { it.id == id }
+
+        return if (todoList != null) {
+            // Update the existing todoList
+            val updatedList = parseTodoListJson(body)
+            todoList.list = updatedList.list
+            "HTTP/1.1 200 OK\r\n\r\n"
+        } else if (path == "/api/list/new") {
+            // Create a new todoList
+            val newTodoList = parseTodoListJson(body)
+            mutableList.add(newTodoList)
+            val responseJson = """
+            {"id": "${newTodoList.id}"}
+        """.trimIndent()
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n$responseJson"
+        } else {
+            "HTTP/1.1 404 Not Found\r\n\r\n"
+        }
+    }
+
+    private fun handleDeleteRequest(path: String): String {
+        val id = path.substringAfterLast("/")
+        val todoList = mutableList.find { it.id == id }
+
+        return if (todoList != null) {
+            mutableList.remove(todoList)
+            "HTTP/1.1 200 OK\r\n\r\n"
+        } else {
+            "HTTP/1.1 404 Not Found\r\n\r\n"
+        }
+    }
+
+    private fun sendResponse(response: String) {
+        val outputStream = clientSocket.getOutputStream()
+        val writer = BufferedWriter(OutputStreamWriter(outputStream))
+        writer.write(response)
+        writer.flush()
+    }
+
+    private fun parseTodoListJson(json: String): TodoList {
+        // Implement your JSON parsing logic here
+        // This is just a placeholder implementation
+        val id = json.substringAfter("\"id\": ").substringBefore(",").trim()
+        val title = json.substringAfter("\"title\": ").substringBefore(",").trim()
+        val list = json.substringAfter("\"list\": ").trim()
+
+        return TodoList(id, title, list)
     }
 }
 
-fun handleDeleteRequest(path: String): String {
-    val id = path.substringAfterLast("/api/list/").toInt()
-    val todoList = todoLists.find { it.id == id }
-    return if (todoList != null) {
-        todoLists.remove(todoList)
-        "HTTP/1.1 200 OK\r\n\r\n"
-    } else {
-        "HTTP/1.1 404 Not Found\r\n\r\n"
-    }
-}
+data class TodoList(val id: String, val title: String, var list: String)
+
+val mutableList = mutableListOf(
+    TodoList("1", "Todo List 1", """[{"itemid": 1, "detail": "Item 1", "completed": false}]"""),
+    TodoList("2", "Todo List 2", """[{"itemid": 1, "detail": "Item 1", "completed": true}, {"itemid": 2, "detail": "Item 2", "completed": false}]""")
+)
