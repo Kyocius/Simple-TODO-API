@@ -12,6 +12,13 @@ fun main() {
     }
 }
 
+data class TodoList(val id: String, val title: String, var list: String)
+
+val mutableList = mutableListOf(
+    TodoList("1", "Todo List 1", """[{"itemid": 1, "detail": "Item 1", "completed": false}]"""),
+    TodoList("2", "Todo List 2", """[{"itemid": 1, "detail": "Item 1", "completed": true}, {"itemid": 2, "detail": "Item 2", "completed": false}]""")
+)
+
 class ClientHandler(private val clientSocket: Socket) : Runnable {
     override fun run() {
         val request = readRequest()
@@ -112,10 +119,3 @@ class ClientHandler(private val clientSocket: Socket) : Runnable {
         return TodoList(id, title, list)
     }
 }
-
-data class TodoList(val id: String, val title: String, var list: String)
-
-val mutableList = mutableListOf(
-    TodoList("1", "Todo List 1", """[{"itemid": 1, "detail": "Item 1", "completed": false}]"""),
-    TodoList("2", "Todo List 2", """[{"itemid": 1, "detail": "Item 1", "completed": true}, {"itemid": 2, "detail": "Item 2", "completed": false}]""")
-)
